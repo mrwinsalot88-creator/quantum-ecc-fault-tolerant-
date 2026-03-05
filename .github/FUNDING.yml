@@ -1,0 +1,124 @@
+import numpy as np
+from qiskit import QuantumCircuit, transpile, Aer
+from qiskit_aer import AerSimulator
+from qiskit_aer.noise import NoiseModel, depolarizing_error
+import matplotlib.pyplot as plt
+
+# ===============================
+# PARAMETERS
+# ===============================
+strand_length = 4
+cycles = 10
+physical_error = 0.02
+
+# Two strands: A & B
+num_qubits = strand_length * 2
+
+# Ancilla qubits for parity checks (9s)
+ancilla_qubits = (strand_length - 1) * 2
+total_qubits = num_qubits + ancilla_qubits
+
+# ===============================
+# Map 0 = 3,6,9 onto qubits
+# ===============================
+# For demonstration:
+# 3 = entangled GHZ base qubits (first of each strand)
+# 6 = superposition qubit (0th qubit of Strand A)
+# 9 = ancilla/failsafe qubits (for parity check)
+numeric_label = ['6','3','3','3',  # Strand A: first qubit 6 (superposition), rest 3
+                 '3','3','3','3']  # Strand B: all 3 (entangled)
+numeric_label += ['9']*ancilla_qubits  # Ancilla qubits = 9
+
+# ===============================
+# Build Logical State
+# ===============================
+def build_logical_state():
+    qc = QuantumCircuit(total_qubits)
+    # Strand A GHZ |+>
+    qc.h(0)  # 6 = superposition
+    for i in range(1, strand_length):
+        qc.cx(0, i)  # 3 = entangled qubits
+    # Copy to Strand B
+    for i in range(strand_length):
+        qc.cx(i, i + strand_length)
+    return qc
+
+# ===============================
+# Parity Checks & Active Correction
+# ===============================
+def parity_check_and_correct(qc):
+    anc_start = num_qubits
+    for i in range(strand_length - 1):
+        anc = anc_start + i
+        # Measure parity between neighboring qubits
+        qc.cx(i, anc)
+        qc.cx(i+1, anc)
+        # Conditional correction (simulated)
+        qc.cx(anc, i+1)
+        qc.reset(anc)
+    for i in range(strand_length - 1):
+        anc = anc_start + (strand_length - 1) + i
+        qc.cx(i + strand_length, anc)
+        qc.cx(i+1 + strand_length, anc)
+        qc.cx(anc, i+1 + strand_length)
+        qc.reset(anc)
+    return qc
+
+# ===============================
+# Noise Model
+# ===============================
+noise_model = NoiseModel()
+noise_model.add_all_qubit_quantum_error(depolarizing_error(physical_error,1), ['h'])
+noise_model.add_all_qubit_quantum_error(depolarizing_error(physical_error,2), ['cx'])
+
+backend = AerSimulator(method="density_matrix", noise_model=noise_model)
+
+# ===============================
+# Run Simulation & Track Logical Errors
+# ===============================
+logical_errors = []
+
+for cycle in range(cycles):
+    qc = build_logical_state()
+    qc = parity_check_and_correct(qc)
+    
+    compiled = transpile(qc, backend)
+    result = backend.run(compiled).result()
+    dm = result.data(0)['density_matrix']
+    
+    # Logical qubit measurement (strand A parity)
+    p0 = np.real(dm[0,0])
+    p1 = np.real(dm[1,1])
+    logical_error = min(p0, p1)
+    logical_errors.append(logical_error)
+
+# ===============================
+# Draw Circuit with Numeric Labels
+# ===============================
+qc = build_logical_state()
+qc = parity_check_and_correct(qc)
+
+# Custom qubit labels using numeric_label
+qc_draw_labels = {i: numeric_label[i] for i in range(total_qubits)}
+qc.draw('mpl', qubits=range(total_qubits), fold=-1, idle_wires=False)
+
+plt.plot(range(cycles), logical_errors, marker='o')
+plt.xlabel("Correction Cycle")
+plt.ylabel("Logical Error Probability")
+plt.title("Fault-Tolerant [[4,1,2]] Logical Qubit (0=3,6,9)")
+plt.grid(True)
+plt.show()# These are supported funding model platforms
+
+github: # Replace with up to 4 GitHub Sponsors-enabled usernames e.g., [user1, user2]
+patreon: # Replace with a single Patreon username
+open_collective: # Replace with a single Open Collective username
+ko_fi: # Replace with a single Ko-fi username
+tidelift: # Replace with a single Tidelift platform-name/package-name e.g., npm/babel
+community_bridge: # Replace with a single Community Bridge project-name e.g., cloud-foundry
+liberapay: # Replace with a single Liberapay username
+issuehunt: # Replace with a single IssueHunt username
+lfx_crowdfunding: # Replace with a single LFX Crowdfunding project-name e.g., cloud-foundry
+polar: # Replace with a single Polar username
+buy_me_a_coffee: # Replace with a single Buy Me a Coffee username
+thanks_dev: # Replace with a single thanks.dev username
+custom: # Replace with up to 4 custom sponsorship URLs e.g., ['link1', 'link2']
